@@ -23,8 +23,8 @@ This application detects dangers on the road using YOLOv5 models. The program lo
 1. **Clone the repository:**
 
     ```sh
-    git clone https://github.com/yourusername/danger-on-the-road-detection.git
-    cd danger-on-the-road-detection
+    git clone https://github.com/Primorci/Projekt.git
+    cd Projekt
     ```
 
 2. **Install the required packages:**
