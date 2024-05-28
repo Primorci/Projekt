@@ -43,7 +43,7 @@ This application detects dangers on the road using YOLOv5 models. The program lo
 1. **Run the application:**
 
     ```sh
-    python app.py
+    python main.py
     ```
 
 2. **Open a video file:**
