@@ -93,11 +93,7 @@ This application detects dangers on the road using YOLOv5 models. The program lo
     window = tk.Tk()
     ...
     ```
-
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request for any changes or improvements.
-
+    
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
