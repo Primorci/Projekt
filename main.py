@@ -50,8 +50,11 @@ def detect_objects():
             results_road = modelRoad(frame)
 
             # Render detections
-            results_danger.render()
-            results_road.render()
+            if var1.get():
+                results_danger.render()
+
+            if var2.get(): 
+                results_road.render()
 
             # Update the detection results label
             detected_classes = []
@@ -75,7 +78,7 @@ def show_about():
     """
     Show an about message box.
     """
-    messagebox.showinfo("About", "This application detects dangers on the road using YOLOv5 models.")
+    messagebox.showinfo("About", "This application detects dangers on the road and type of the road using YOLOv5 models.")
 
 # Create the main window
 window = tk.Tk()
@@ -84,6 +87,14 @@ window.geometry("820x680")  # Adjust window size to include status bar
 
 # Create a menu bar
 menu_bar = tk.Menu(window)
+
+# Variables to store the state of checkboxes
+var1 = tk.BooleanVar()
+var2 = tk.BooleanVar()
+
+# Create checkboxes
+checkbox1 = tk.Checkbutton(window, text="Show possible danger", variable=var1)
+checkbox2 = tk.Checkbutton(window, text="Show type of the road", variable=var2)
 
 # Create the File menu
 file_menu = tk.Menu(menu_bar, tearoff=0)
@@ -103,6 +114,10 @@ window.config(menu=menu_bar)
 # Create a canvas to show the video frames
 canvas = tk.Canvas(window, width=800, height=600)
 canvas.pack()
+
+# Place checkboxes in the window
+checkbox1.pack(anchor='w', padx=10)
+checkbox2.pack(anchor='w', padx=10)
 
 # Label to display detected objects
 detection_label = tk.Label(window, text="Detected: None", bd=1, relief=tk.SUNKEN, anchor=tk.W)
