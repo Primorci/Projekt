@@ -83,7 +83,7 @@ def show_about():
 # Create the main window
 window = tk.Tk()
 window.title("Danger on the Road Detection")
-window.geometry("820x680")  # Adjust window size to include status bar
+window.geometry("820x700")  # Adjust window size to include status bar
 
 # Create a menu bar
 menu_bar = tk.Menu(window)
