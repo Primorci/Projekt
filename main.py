@@ -6,8 +6,8 @@ import cv2
 import numpy as np
 
 # Load the models
-modelDanger = torch.hub.load('ultralytics/yolov5', 'custom', path='C:/Users/mihap/yolov5/runs/train/exp9/weights/best.pt')
-modelRoad = torch.hub.load('ultralytics/yolov5', 'custom', path='C:/Users/mihap/yolov5/runs/train/exp11/weights/best.pt')
+modelDanger = torch.hub.load('ultralytics/yolov5', 'custom', path='Yolo\DangerBest.pt')
+modelRoad = torch.hub.load('ultralytics/yolov5', 'custom', path='Yolo\RoadBest.pt')
 
 def resize_image(image, max_size=(800, 600)):
     """
