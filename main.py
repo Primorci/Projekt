@@ -4,10 +4,57 @@ from PIL import Image, ImageTk
 import torch
 import cv2
 import numpy as np
+import threading
+
+# MQTT lib
+import time
+import psutil
+import paho.mqtt.client as mqtt
+from prometheus_client import start_http_server, Counter, Summary, Gauge
+
+# Prometheus metrics
+frame_processing_rate = Counter('frame_processing_rate', 'Number of frames processed per second')
+detection_count = Counter('detection_count', 'Number of objects detected')
+detection_latency = Summary('detection_latency_seconds', 'Time taken to process each frame')
+average_confidence = Summary('average_confidence', 'Average confidence score of detections')
+memory_usage = Gauge('memory_usage_percent', 'Memory usage of the YOLO algorithm')
+cpu_usage = Gauge('cpu_usage_percent', 'CPU usage of the YOLO algorithm')
+error_count = Counter('error_count', 'Number of frames that failed to process')
+connection_status = Gauge('mqtt_connection_status', 'MQTT connection status (1 for connected, 0 for disconnected)')
+
+# Start Prometheus metrics server
+start_http_server(5555)
+
+# IP address and port of MQTT Broker (Mosquitto MQTT)
+broker = "10.8.1.6"
+port = 1883
+topic = "/data"
+
+def on_connect(client, userdata, flags, reasonCode, properties=None):
+    if reasonCode == 0:
+        print("Connected to MQTT Broker successfully.")
+        connection_status.set(1)  # Set connection status to connected
+    else:
+        print(f"Failed to connect to MQTT Broker. Reason: {reasonCode}")
+        connection_status.set(0)  # Set connection status to disconnected
+
+def on_disconnect(client, userdata, rc):
+    print(f"Disconnected from MQTT Broker. Reason: {rc}")
+    connection_status.set(0)  # Set connection status to disconnected
+
+producer = mqtt.Client(client_id="producer_1", callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+
+# Connect to MQTT broker
+producer.connect(broker, port, 60)
+producer.loop_start()  # Start a new thread to handle network traffic and dispatching callbacks
+
+# Setup MQTT client
+producer.on_connect = on_connect
+producer.on_disconnect = on_disconnect
 
 # Load the models
-modelDanger = torch.hub.load('ultralytics/yolov5', 'custom', path='Yolo\DangerBest.pt')
-modelRoad = torch.hub.load('ultralytics/yolov5', 'custom', path='Yolo\RoadBest.pt')
+modelDanger = torch.hub.load('ultralytics/yolov5', 'custom', path='Yolo/DangerBest.pt')
+modelRoad = torch.hub.load('ultralytics/yolov5', 'custom', path='Yolo/RoadBest.pt')
 
 def resize_image(image, max_size=(800, 600)):
     """
@@ -42,34 +89,68 @@ def detect_objects():
     if cap.isOpened():
         ret, frame = cap.read()
         if ret:
-            # Convert the color from BGR to RGB
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            start_time = time.time()
+            try:
+                # Convert the color from BGR to RGB
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            # Run detection using both models
-            results_danger = modelDanger(frame)
-            results_road = modelRoad(frame)
+                # Run detection using both models
+                results_danger = modelDanger(frame)
+                results_road = modelRoad(frame)
 
-            # Render detections
-            results_danger.render()
-            results_road.render()
+                # Render detections
+                results_danger.render()
+                results_road.render()
 
-            # Update the detection results label
-            detected_classes = []
-            if results_danger.pred[0] is not None:
-                detected_classes.extend(results_danger.names[int(cls)] for cls in results_danger.pred[0][:, -1])
-            if results_road.pred[0] is not None:
-                detected_classes.extend(results_road.names[int(cls)] for cls in results_road.pred[0][:, -1])
-            detection_label.config(text="Detected: " + ", ".join(set(detected_classes)) if detected_classes else "Detected: None")
+                # Update the detection results label
+                detected_classes = []
+                total_detections = 0
 
-            # Convert array to Image
-            frame_image = Image.fromarray(frame)
-            frame_resized = resize_image(np.array(frame_image))
-            photo = ImageTk.PhotoImage(image=Image.fromarray(frame_resized))
-            canvas.create_image(20, 20, anchor='nw', image=photo)
+                if results_danger.pred[0] is not None:
+                    detected_classes.extend(results_danger.names[int(cls)] for cls in results_danger.pred[0][:, -1])
+                    total_detections += len(results_danger.pred[0])
+                    for detection in results_danger.pred[0]:
+                        average_confidence.observe(detection[-2])
+                    detection_count.inc(len(results_danger.pred[0]))
+
+                if results_road.pred[0] is not None:
+                    detected_classes.extend(results_road.names[int(cls)] for cls in results_road.pred[0][:, -1])
+                    total_detections += len(results_road.pred[0])
+                    for detection in results_road.pred[0]:
+                        average_confidence.observe(detection[-2])
+                    detection_count.inc(len(results_road.pred[0]))
+
+                detection_label.config(text="Detected: " + ", ".join(set(detected_classes)) if detected_classes else "Detected: None")
+                
+                # Convert array to Image
+                frame_image = Image.fromarray(frame)
+                frame_resized = resize_image(np.array(frame_image))
+                photo = ImageTk.PhotoImage(image=Image.fromarray(frame_resized))
+                canvas.create_image(20, 20, anchor='nw', image=photo)
+
+                # Prometheus metrics
+                frame_processing_rate.inc()
+                detection_latency.observe(time.time() - start_time)
+
+            except Exception as e:
+                error_count.inc()
+                print(f"Error processing frame: {e}")
+
             window.after(64, detect_objects)
         else:
             cap.release()
             status_bar.config(text="Video ended")
+
+def update_system_metrics():
+    """
+    Updates system metrics on prometheus (CPU and memory)
+    """
+    while True:
+        mem_percent = psutil.virtual_memory().percent
+        memory_usage.set(mem_percent)
+
+        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_usage.set(cpu_percent)
 
 def show_about():
     """
@@ -111,5 +192,10 @@ detection_label.pack(side=tk.TOP, fill=tk.X)
 # Create a status bar to display information
 status_bar = tk.Label(window, text="Status: Ready", bd=1, relief=tk.SUNKEN, anchor=tk.W)
 status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+# Start a separate thread to continuously update system metrics
+metrics_thread = threading.Thread(target=update_system_metrics)
+metrics_thread.daemon = True
+metrics_thread.start()
 
 window.mainloop()
