@@ -75,7 +75,7 @@ def open_csv():
         load_csv(file_path)
 
 def load_csv(file_path):
-    global gyroscope_y_values, timestamps, num_segments, ani
+    global gyroscope_y_values, timestamps, num_segments, ani, start_timestamp
     gyroscope_y_values = []
     timestamps = []
     with open(file_path, "r") as csv_file:
@@ -85,12 +85,15 @@ def load_csv(file_path):
             gyroscope_y_values.append(float(row['GyroscopeY']))
     gyroscope_y_values = np.array(gyroscope_y_values)
     timestamps = np.array(timestamps)
+    start_timestamp = timestamps[0]  # Record the initial timestamp
+    timestamps -= start_timestamp  # Convert timestamps to relative time
     num_segments = len(gyroscope_y_values) // 20
 
     ani = FuncAnimation(fig, update, frames=range(0, num_segments), interval=1000)
     canvas_plot.draw()
 
 def update(frame):
+    global red_lines, orange_lines
     if frame is not None:
         if frame == 0:
             start_idx = 0
@@ -113,17 +116,40 @@ def update(frame):
 
         ax.set_ylim(-5, 5)
 
-        current_time = timestamps[end_idx - 1]
+        current_time = segment_time[-1]
         ax.set_xlim(max(0, current_time - 10), current_time)
         ax.set_xticks(np.arange(max(0, current_time - 10), current_time + 1, 1))
         ax.set_xticklabels(np.arange(max(0, current_time - 10), current_time + 1, 1).astype(int))
+
+        if var3.get():
+            if red_lines is not None:
+                for line in red_lines:
+                    line.remove()
+            if orange_lines is not None:
+                for line in orange_lines:
+                    line.remove()
+                    
+            red_lines = [ax.axhline(2, color='red', linestyle='--', alpha=0.8),
+                         ax.axhline(-2, color='red', linestyle='--', alpha=0.8)]
+            orange_lines = [ax.axhline(0.25, color='orange', linestyle='--', alpha=0.8),
+                            ax.axhline(-0.25, color='orange', linestyle='--', alpha=0.8)]
+        else:
+            if red_lines is not None:
+                for line in red_lines:
+                    line.remove()
+                red_lines = None
+            if orange_lines is not None:
+                for line in orange_lines:
+                    line.remove()
+                orange_lines = None
+
     canvas_plot.draw()
 
 # Create the main window
 window = tk.Tk()
 window.title("Danger on the Road Detection")
-window.geometry("1200x900")
-window.minsize(1200, 900)
+window.geometry("1600x800")
+window.minsize(1600, 800)
 
 # Create a menu bar
 menu_bar = tk.Menu(window)
@@ -131,10 +157,7 @@ menu_bar = tk.Menu(window)
 # Variables to store the state of checkboxes
 var1 = tk.BooleanVar()
 var2 = tk.BooleanVar()
-
-# Create checkboxes
-checkbox1 = tk.Checkbutton(window, text="Show possible danger", variable=var1)
-checkbox2 = tk.Checkbutton(window, text="Show type of the road", variable=var2)
+var3 = tk.BooleanVar()
 
 # Create the File menu
 file_menu = tk.Menu(menu_bar, tearoff=0)
@@ -153,20 +176,24 @@ menu_bar.add_cascade(label="Help", menu=help_menu)
 window.config(menu=menu_bar)
 
 # Create a frame for the video and controls
-left_frame = tk.Frame(window)
+left_frame = tk.Frame(window, bg="white", padx=10, pady=10)
 left_frame.grid(row=0, column=0, sticky="nsew")
 
 # Create a canvas to display the video
 canvas = tk.Canvas(left_frame, bg="black", width=800, height=600)
-canvas.grid(row=0, column=0, rowspan=2, padx=10, pady=10)
+canvas.grid(row=0, column=0, columnspan=3, padx=10, pady=10)
 
 # Create checkboxes for the detection options
+checkbox1 = tk.Checkbutton(left_frame, text="Show possible danger", variable=var1, bg="white")
+checkbox2 = tk.Checkbutton(left_frame, text="Show type of the road", variable=var2, bg="white")
+checkbox3 = tk.Checkbutton(left_frame, text="Show thresholds for the graph", variable=var3, bg="white", command=lambda: update(None))
 checkbox1.grid(row=1, column=0, sticky="nw", padx=10, pady=5)
-checkbox2.grid(row=2, column=0, sticky="nw", padx=10, pady=5)
+checkbox2.grid(row=1, column=1, sticky="nw", padx=10, pady=5)
+checkbox3.grid(row=1, column=2, sticky="nw", padx=10, pady=5)
 
 # Create a label to display the detected classes
-detection_label = tk.Label(left_frame, text="Detected: None", font=("Helvetica", 12))
-detection_label.grid(row=3, column=0, sticky="nw", padx=10, pady=10)
+detection_label = tk.Label(left_frame, text="Detected: None", font=("Helvetica", 12), bg="white")
+detection_label.grid(row=2, column=0, columnspan=3, sticky="nw", padx=10, pady=10)
 
 # Create a status bar
 status_bar = tk.Label(window, text="Select a video file", bd=1, relief=tk.SUNKEN, anchor=tk.W)
@@ -175,26 +202,23 @@ status_bar.grid(row=2, column=0, columnspan=2, sticky="ew")
 # Add the plot area for the graph
 fig, ax = plt.subplots()
 fig.patch.set_facecolor('white')
-# ax.set_facecolor('white')
-# ax.tick_params(colors='black', which='both')
-# ax.spines['top'].set_color('black')
-# ax.spines['bottom'].set_color('black')
-# ax.spines['left'].set_color('black')
-# ax.spines['right'].set_color('black')
-# ax.xaxis.label.set_color('black')
-# ax.yaxis.label.set_color('black')
-# ax.title.set_color('black')
-# ax.yaxis.set_tick_params(labelcolor='black')
-# ax.xaxis.set_tick_params(labelcolor='black')
-# ax.set_xlabel("Time (seconds)", color='black')
-# ax.set_ylabel("Gyroscope Y", color='black')
+
+ax.set_ylabel('Gyroscope Y')
+ax.set_xlabel('Seconds')
 
 canvas_plot = FigureCanvasTkAgg(fig, master=window)
-canvas_plot.get_tk_widget().grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+canvas_plot.get_tk_widget().grid(row=0, column=1, rowspan=2, sticky="nsew", padx=10, pady=10)
 
-window.grid_columnconfigure(0, weight=1)
-window.grid_columnconfigure(1, weight=1)
 window.grid_rowconfigure(0, weight=1)
+window.grid_columnconfigure(1, weight=1)
 
-# Start the Tkinter event loop
+# Variables to store gyroscope data and animation
+gyroscope_y_values = []
+timestamps = []
+num_segments = 0
+red_lines = None
+orange_lines = None
+ani = None
+
+# Run the application
 window.mainloop()
