@@ -12,10 +12,36 @@ from matplotlib.animation import FuncAnimation
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.collections import LineCollection
 import csv
+import zipfile
+import threading
+import glob
 
 # Load the models
 modelDanger = torch.hub.load('ultralytics/yolov5', 'custom', path='Yolo/DangerBest.pt')
 modelRoad = torch.hub.load('ultralytics/yolov5', 'custom', path='Yolo/RoadBest.pt')
+
+def extract_zip():
+    zip_path = filedialog.askopenfilename(filetypes=[("ZIP", "*.zip")])
+    if not zip_path:
+        return
+
+    extract_to = "ZIP_ex"
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(extract_to)
+    
+    video_files = glob.glob(os.path.join(extract_to, "*.mp4"))
+    csv_files = glob.glob(os.path.join(extract_to, "*.csv"))
+
+    if video_files and csv_files:
+        # Create threads for video and CSV processing
+        video_thread = threading.Thread(target=open_video, args=(1, video_files[0]))
+        csv_thread = threading.Thread(target=open_csv, args=(1, csv_files[0]))
+
+        # Start the threads
+        video_thread.start()
+        csv_thread.start()
+    else:
+        messagebox.showinfo("Error", "No video or CSV file found in the ZIP.")
 
 def resize_image(image, max_size=(800, 600)):
     h, w = image.shape[:2]
@@ -24,11 +50,19 @@ def resize_image(image, max_size=(800, 600)):
     resized_image = cv2.resize(image, new_size, interpolation=cv2.INTER_LANCZOS4)
     return resized_image
 
-def open_video():
+def open_video(openMethod: int = 0, file_path = ""):
     global cap
-    file_path = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4;*.avi;*.mov;*.mkv")])
+    if openMethod == 0:     
+        file_path = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4;*.avi;*.mov;*.mkv")])
     if file_path:
         cap = cv2.VideoCapture(file_path)
+        if not cap.isOpened():
+            status_bar.config(text="Failed to load video")
+            messagebox.showinfo("Error", "Failed to load video.")
+            return
+        
+        start_event.wait()  
+
         window.title(f"Danger on the Road Detection - {file_path}")
         status_bar.config(text="Video loaded: " + file_path)
         detect_objects()
@@ -69,10 +103,16 @@ def detect_objects():
 def show_about():
     messagebox.showinfo("About", "This application detects dangers on the road and type of the road using YOLOv5 models.")
 
-def open_csv():
-    file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
+def open_csv(openMethod: int = 0, file_path = ""):
+    if openMethod == 0:
+        file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
+    elif openMethod == 1:
+        file_path = file_path
+        
     if file_path:
-        load_csv(file_path)
+        # Create a thread for loading the CSV file
+        csv_thread = threading.Thread(target=load_csv, args=(file_path,))
+        csv_thread.start()
 
 def load_csv(file_path):
     global gyroscope_y_values, timestamps, num_segments, ani
@@ -80,6 +120,7 @@ def load_csv(file_path):
     timestamps = []
     with open(file_path, "r") as csv_file:
         csv_reader = csv.DictReader(csv_file, delimiter=';')
+        start_event.set()
         for row in csv_reader:
             timestamps.append(float(row['Timestamp']))
             gyroscope_y_values.append(float(row['GyroscopeY']))
@@ -88,7 +129,7 @@ def load_csv(file_path):
     num_segments = len(gyroscope_y_values) // 20
 
     ani = FuncAnimation(fig, update, frames=range(0, num_segments), interval=1000)
-    canvas_plot.draw()
+    window.after(0, canvas_plot.draw)
 
 def update(frame):
     if frame is not None:
@@ -117,13 +158,15 @@ def update(frame):
         ax.set_xlim(max(0, current_time - 10), current_time)
         ax.set_xticks(np.arange(max(0, current_time - 10), current_time + 1, 1))
         ax.set_xticklabels(np.arange(max(0, current_time - 10), current_time + 1, 1).astype(int))
-    canvas_plot.draw()
+    window.after(0, canvas_plot.draw)
 
 # Create the main window
 window = tk.Tk()
 window.title("Danger on the Road Detection")
 window.geometry("1200x900")
 window.minsize(1200, 900)
+
+start_event = threading.Event()
 
 # Create a menu bar
 menu_bar = tk.Menu(window)
@@ -140,6 +183,7 @@ checkbox2 = tk.Checkbutton(window, text="Show type of the road", variable=var2)
 file_menu = tk.Menu(menu_bar, tearoff=0)
 file_menu.add_command(label="Open Video", command=open_video)
 file_menu.add_command(label="Open CSV", command=open_csv)
+file_menu.add_command(label="Import ZIP", command=extract_zip)
 file_menu.add_separator()
 file_menu.add_command(label="Exit", command=window.quit)
 menu_bar.add_cascade(label="File", menu=file_menu)
@@ -175,19 +219,6 @@ status_bar.grid(row=2, column=0, columnspan=2, sticky="ew")
 # Add the plot area for the graph
 fig, ax = plt.subplots()
 fig.patch.set_facecolor('white')
-# ax.set_facecolor('white')
-# ax.tick_params(colors='black', which='both')
-# ax.spines['top'].set_color('black')
-# ax.spines['bottom'].set_color('black')
-# ax.spines['left'].set_color('black')
-# ax.spines['right'].set_color('black')
-# ax.xaxis.label.set_color('black')
-# ax.yaxis.label.set_color('black')
-# ax.title.set_color('black')
-# ax.yaxis.set_tick_params(labelcolor='black')
-# ax.xaxis.set_tick_params(labelcolor='black')
-# ax.set_xlabel("Time (seconds)", color='black')
-# ax.set_ylabel("Gyroscope Y", color='black')
 
 canvas_plot = FigureCanvasTkAgg(fig, master=window)
 canvas_plot.get_tk_widget().grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
